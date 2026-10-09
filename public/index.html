@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cajero automático</title>
+  <link rel="stylesheet" href="/estilos.css">
+</head>
+<body>
+  <main class="atm">
+    <header class="atm-cabecera">
+      <p class="marca">Banco Central</p>
+      <h1 id="nombre-cajero">Cajero automático</h1>
+    </header>
+
+    <section class="pantalla">
+      <div id="vista-cuenta">
+        <h2>Bienvenido</h2>
+        <p class="ayuda">Escribe tu número de cuenta.</p>
+        <form id="form-cuenta" class="fila-form">
+          <input id="numero-cuenta" inputmode="numeric" maxlength="10" placeholder="4000000001" required>
+          <button class="primario">Continuar</button>
+        </form>
+      </div>
+
+      <div id="vista-menu" hidden>
+        <h2 id="saludo"></h2>
+        <p class="ayuda">¿Qué deseas hacer?</p>
+        <div class="menu">
+          <button id="btn-saldo">Consultar saldo</button>
+          <button id="btn-retiro">Retirar</button>
+          <button id="btn-deposito">Depositar</button>
+          <button class="secundario" id="btn-salir">Salir</button>
+        </div>
+      </div>
+
+      <div id="vista-monto" hidden>
+        <h2 id="titulo-monto"></h2>
+        <div class="montos">
+          <button data-monto="100">$100</button>
+          <button data-monto="200">$200</button>
+          <button data-monto="300">$300</button>
+          <button data-monto="500">$500</button>
+          <button data-monto="1000">$1,000</button>
+          <button data-monto="2000">$2,000</button>
+        </div>
+        <form id="form-monto" class="fila-form">
+          <input id="monto" type="number" min="1" step="0.01" placeholder="Otro monto" required>
+          <button class="primario">Aceptar</button>
+        </form>
+        <button class="secundario" id="btn-regresar">Regresar</button>
+      </div>
+
+      <div id="vista-resultado" hidden>
+        <div id="resultado"></div>
+        <div class="acciones">
+          <button class="primario" id="btn-otra">Otra operación</button>
+          <button class="secundario" id="btn-terminar">Terminar</button>
+        </div>
+      </div>
+    </section>
+
+    <footer class="atm-pie">
+      <a href="/admin">Administración</a>
+    </footer>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const pesos = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
+
+    let cuenta = null;
+    let operacion = null; // 'retiro' o 'deposito'
+
+    function mostrar(vista) {
+      for (const v of ['cuenta', 'menu', 'monto', 'resultado']) {
+        $('vista-' + v).hidden = v !== vista;
+      }
+    }
+
+    async function api(metodo, url, cuerpo) {
+      const res = await fetch(url, {
+        method: metodo,
+        headers: { 'Content-Type': 'application/json' },
+        body: cuerpo ? JSON.stringify(cuerpo) : undefined,
+      });
+      const datos = await res.json();
+      if (!res.ok) throw new Error(datos.error);
+      return datos;
+    }
+
+    function mostrarResultado(titulo, texto, esError = false) {
+      $('resultado').innerHTML = '<p class="etiqueta"></p><p class="cifra"></p>';
+      $('resultado').className = esError ? 'aviso error' : 'aviso';
+      $('resultado').querySelector('.etiqueta').textContent = titulo;
+      $('resultado').querySelector('.cifra').textContent = texto;
+      $('btn-otra').hidden = !cuenta;
+      mostrar('resultado');
+    }
+
+    async function cargarNombre() {
+      const estado = await api('GET', '/api/estado');
+      $('nombre-cajero').textContent = estado.configurado ? estado.nombre : 'Fuera de servicio';
+    }
+
+    $('form-cuenta').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const datos = await api('GET', `/api/cuentas/${$('numero-cuenta').value}/saldo`);
+        cuenta = datos.numero_cuenta;
+        $('saludo').textContent = `Hola, ${datos.titular}`;
+        mostrar('menu');
+      } catch (err) {
+        mostrarResultado('Error', err.message, true);
+      }
+    });
+
+    $('btn-saldo').addEventListener('click', async () => {
+      try {
+        const datos = await api('GET', `/api/cuentas/${cuenta}/saldo`);
+        mostrarResultado('Saldo disponible', pesos.format(datos.saldo));
+      } catch (err) {
+        mostrarResultado('Error', err.message, true);
+      }
+    });
+
+    function pedirMonto(tipo) {
+      operacion = tipo;
+      $('titulo-monto').textContent = tipo === 'retiro' ? 'Retirar efectivo' : 'Depositar';
+      $('monto').value = '';
+      mostrar('monto');
+    }
+
+    async function operar(monto) {
+      const url = operacion === 'retiro' ? '/api/retiros' : '/api/depositos';
+      try {
+        const datos = await api('POST', url, { numero_cuenta: cuenta, monto });
+        const titulo = operacion === 'retiro' ? 'Retira tu efectivo' : 'Depósito realizado';
+        mostrarResultado(titulo, pesos.format(datos.monto));
+        $('resultado').insertAdjacentHTML('beforeend',
+          `<p>Saldo actual: ${pesos.format(datos.saldo)} · Folio ${datos.transaccion_id}</p>`);
+      } catch (err) {
+        mostrarResultado('No se pudo realizar', err.message, true);
+      }
+    }
+
+    document.querySelectorAll('[data-monto]').forEach((boton) => {
+      boton.addEventListener('click', () => operar(Number(boton.dataset.monto)));
+    });
+
+    $('form-monto').addEventListener('submit', (e) => {
+      e.preventDefault();
+      operar(Number($('monto').value));
+    });
+
+    function salir() {
+      cuenta = null;
+      $('numero-cuenta').value = '';
+      mostrar('cuenta');
+    }
+
+    $('btn-retiro').addEventListener('click', () => pedirMonto('retiro'));
+    $('btn-deposito').addEventListener('click', () => pedirMonto('deposito'));
+    $('btn-regresar').addEventListener('click', () => mostrar('menu'));
+    $('btn-otra').addEventListener('click', () => mostrar('menu'));
+    $('btn-salir').addEventListener('click', salir);
+    $('btn-terminar').addEventListener('click', salir);
+
+    cargarNombre();
+  </script>
+</body>
+</html>

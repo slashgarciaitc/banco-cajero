@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Administración del cajero</title>
+  <link rel="stylesheet" href="/estilos.css">
+</head>
+<body>
+  <main class="panel">
+    <h1>Administración del cajero</h1>
+
+    <section class="tarjeta" id="datos" hidden>
+      <p><span class="etiqueta">Cajero:</span> <span id="nombre"></span></p>
+      <p><span class="etiqueta">Responsable:</span> <span id="responsable"></span></p>
+      <p><span class="etiqueta">Efectivo disponible:</span> <span id="efectivo"></span></p>
+      <p><span class="etiqueta">API key:</span> <span id="api-key"></span></p>
+      <button id="btn-sincronizar">Actualizar efectivo desde el banco central</button>
+    </section>
+
+    <section class="tarjeta">
+      <h2>API key del banco central</h2>
+      <form id="form-config" class="fila-form">
+        <input id="input-key" placeholder="bk_..." required>
+        <button class="primario">Guardar</button>
+      </form>
+      <p id="mensaje"></p>
+      <a href="/">Ir al cajero</a>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const pesos = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
+
+    async function api(metodo, url, cuerpo) {
+      const res = await fetch(url, {
+        method: metodo,
+        headers: { 'Content-Type': 'application/json' },
+        body: cuerpo ? JSON.stringify(cuerpo) : undefined,
+      });
+      const datos = await res.json();
+      if (!res.ok) throw new Error(datos.error);
+      return datos;
+    }
+
+    function mostrar(estado) {
+      $('datos').hidden = !estado.configurado;
+      if (!estado.configurado) return;
+      $('nombre').textContent = estado.nombre;
+      $('responsable').textContent = estado.responsable || 'Sin asignar';
+      $('efectivo').textContent = pesos.format(estado.efectivo);
+      $('api-key').textContent = estado.api_key;
+    }
+
+    $('form-config').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        mostrar(await api('PUT', '/api/admin/config', { api_key: $('input-key').value.trim() }));
+        $('input-key').value = '';
+        $('mensaje').textContent = 'Cajero configurado.';
+      } catch (err) {
+        $('mensaje').textContent = err.message;
+      }
+    });
+
+    $('btn-sincronizar').addEventListener('click', async () => {
+      try {
+        mostrar(await api('POST', '/api/admin/sincronizar'));
+        $('mensaje').textContent = 'Efectivo actualizado.';
+      } catch (err) {
+        $('mensaje').textContent = err.message;
+      }
+    });
+
+    api('GET', '/api/admin/estado').then(mostrar);
+  </script>
+</body>
+</html>

@@ -1,0 +1,176 @@
+openapi: 3.0.3
+info:
+  title: API del cajero automático
+  version: 1.0.0
+  description: >
+    Nodo cajero del sistema bancario. Consulta saldos, hace retiros y depósitos
+    contra el Banco Central (Supabase) usando la API key del cajero.
+    Antes de un retiro revisa que el cajero tenga efectivo suficiente.
+servers:
+  - url: http://localhost:3002
+
+paths:
+  /api/estado:
+    get:
+      summary: Nombre del cajero y si está configurado
+      operationId: estado
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              example: { nombre: Cajero Tec, configurado: true }
+
+  /api/cuentas/{cuenta}/saldo:
+    get:
+      summary: Consultar saldo
+      operationId: consultarSaldo
+      security: []
+      parameters:
+        - name: cuenta
+          in: path
+          required: true
+          schema: { type: string, example: '4000000001' }
+      responses:
+        '200':
+          description: Datos de la cuenta
+          content:
+            application/json:
+              example: { numero_cuenta: '4000000001', titular: Cliente Demo, saldo: 1000, estado: activa }
+        '404': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+
+  /api/retiros:
+    post:
+      summary: Retirar efectivo
+      operationId: retirar
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Operacion' }
+            example: { numero_cuenta: '4000000001', monto: 300 }
+      responses:
+        '201':
+          description: Retiro hecho
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Resultado' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403':
+          description: Cuenta bloqueada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '422':
+          description: Fondos insuficientes o el cajero no tiene efectivo suficiente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: El cajero no está configurado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /api/depositos:
+    post:
+      summary: Depositar
+      operationId: depositar
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Operacion' }
+            example: { numero_cuenta: '4000000001', monto: 500 }
+      responses:
+        '201':
+          description: Depósito hecho
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Resultado' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+
+  /api/admin/estado:
+    get:
+      summary: Configuración actual del cajero
+      operationId: estadoAdmin
+      security: [{ basic: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              example:
+                configurado: true
+                nombre: Cajero Tec
+                responsable: Operador
+                efectivo: 9700
+                api_key: bk_60133f...
+        '401': { $ref: '#/components/responses/Error' }
+
+  /api/admin/config:
+    put:
+      summary: Guardar la API key que generó el Banco Central
+      operationId: configurar
+      security: [{ basic: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example: { api_key: bk_... }
+      responses:
+        '200': { description: Cajero configurado }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+
+  /api/admin/sincronizar:
+    post:
+      summary: Volver a traer del Banco Central el efectivo del cajero
+      operationId: sincronizar
+      security: [{ basic: [] }]
+      responses:
+        '200': { description: Efectivo actualizado }
+        '401': { $ref: '#/components/responses/Error' }
+
+components:
+  securitySchemes:
+    basic:
+      type: http
+      scheme: basic
+
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string, example: Fondos insuficientes }
+
+    Operacion:
+      type: object
+      required: [numero_cuenta, monto]
+      properties:
+        numero_cuenta: { type: string }
+        monto: { type: number }
+
+    Resultado:
+      type: object
+      properties:
+        transaccion_id: { type: integer, example: 2 }
+        numero_cuenta: { type: string, example: '4000000001' }
+        monto: { type: number, example: 300 }
+        saldo: { type: number, example: 700 }
+        efectivo_nodo: { type: number, example: 9700 }
+        fecha: { type: string, format: date-time }
